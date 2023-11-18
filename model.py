@@ -4,8 +4,8 @@ from torch.nn import functional as F
 
 
 class TimeSeriesTransformer(nn.Module):
-    def __init__(self, input_dim, time_window, output_classes, kernel_size=16, stride=8, transformer_depth=8, 
-                 transformer_heads=4, embedding_dim=128, dropout_rate=0.3):
+    def __init__(self, input_dim, time_window, output_classes, kernel_size=16, stride=8, transformer_depth=4, 
+                 transformer_heads=8, embedding_dim=128, dropout_rate=0.3):
         super(TimeSeriesTransformer, self).__init__()
         
         self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=embedding_dim, 

@@ -5,15 +5,19 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 import numpy as np
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
 
 from model import TimeSeriesTransformer
-from dataset import TimeSeriesDataset, label_price_movement
+from dataset import TimeSeriesDataset
+from dummy_data import generate_dummy_data
 
 
 
 def main():
     # ----------- Data Preparation -----------
     print('Data Preparation....')
+    batach_size = 32
     
     data, labels = generate_dummy_data(10000) # ダミーの時系列データの生成
     train_data, train_labels = data[:8000], labels[:8000] # 訓練データとラベル
@@ -21,13 +25,13 @@ def main():
     test_data, test_labels = data[9000:], labels[9000:] # テストデータとラベル
 
     train_dataset = TimeSeriesDataset(train_data, train_labels) # データセットの作成
-    train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True) # DataLoaderの作成
+    train_dataloader = DataLoader(train_dataset, batch_size=batach_size, shuffle=True) # DataLoaderの作成
     
     val_dataset = TimeSeriesDataset(val_data, val_labels)
-    val_dataloader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batach_size, shuffle=False)
     
     test_dataset = TimeSeriesDataset(test_data, test_labels)
-    test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=batach_size, shuffle=False)
     print(f'Train Data: {len(train_dataset)} | Val Data: {len(val_dataset)} | Test Data: {len(test_dataset)}')
 
     # ----------- Model Definition -----------
@@ -44,7 +48,7 @@ def main():
 
     # ----------- Training -----------
     print('Training....')
-    max_epochs = 100
+    max_epochs = 80
     train_loss_list, train_acc_list = [], []
     val_loss_list, val_acc_list = [], []
 
@@ -55,7 +59,7 @@ def main():
         train_loss, train_acc = train(model, train_dataloader, criterion, optimizer) 
 
         # Validation
-        val_loss, val_acc = test(model, val_dataloader, criterion)
+        val_loss, val_acc, _ = test(model, val_dataloader, criterion)
         val_loss, val_acc = round(val_loss, 3), round(val_acc, 3)
 
         # 学習率の更新
@@ -76,44 +80,14 @@ def main():
         if (epoch + 1) % 10 == 0:
             pass
             #torch.save(model.state_dict(), f'time_series_transformer-{epoch}.pth')
+
+    test_loss, test_acc, class_accuracy = test(model, test_dataloader, criterion, mode='test')
+    print(f"Test Loss: {test_loss:.4f} | Test Accuracy: {test_acc:.3f}")
+
+    for i, cl_acc in enumerate(class_accuracy):
+        print(f"Class {i} Accuracy: {cl_acc:.2f}")
+
             
-
-def generate_dummy_data(data_len):
-    step = 0.1  # 時点間のステップ
-    time_window = 80  # サンプルごとの時系列データの長さ
-
-    def sinnp(n, line):
-        return np.sin(n * line / 4)
-
-    def cosnp(n, line):
-        return np.cos(n * line / 4)
-
-    t = np.arange(0, data_len * time_window * step, step)
-    raw_data = (sinnp(1, t) + sinnp(3, t) + sinnp(10, t) + cosnp(5, t) + cosnp(7, t)) / 5
-    raw_data = raw_data + (np.random.rand(len(t)) * 0.05)# ノイズ項
-
-    # 正規化
-    raw_data = (raw_data - np.min(raw_data)) / (np.max(raw_data) - np.min(raw_data))
-    
-    # 確認のためにプロット、保存
-    plt.figure(figsize=(20, 4))  # プロットのサイズを1:5に変更
-    plt.plot(raw_data[:160])
-    plt.savefig('time_series.png')
-
-    # 要素数がtime_windowになるように分割
-    len_data = len(raw_data) // time_window # 100000 / 80 = 1250
-    raw_data = raw_data[:len_data * time_window] # 100000 -> 1250 * 80 = 100000
-    data = raw_data.reshape(len_data, time_window) #  (80, 1250)
-
-    # ラベルの作成
-    threshold = 0.05 # 10%の変化を閾値とする
-    labels = label_price_movement(data, threshold) # ラベルの作成
-
-    data = data[:-1] # 最後のシーケンスはラベルを作成できないので削除
-    
-    return data, labels
-
-
 def train(model, dataloader, criterion, optimizer):
     model.train() # モデルを訓練モードに設定
     total_loss = 0
@@ -149,10 +123,12 @@ def train(model, dataloader, criterion, optimizer):
 
 
 # モデルをテストしてlossとaccuracyを計算
-def test(model, dataloader, critertion):
+def test(model, dataloader, critertion, mode='val'):
     model.eval()
     
     total_loss, total_acc = 0, 0
+    all_labels = []
+    all_preds = []
 
     for test_data, test_labels in dataloader:
 
@@ -166,11 +142,28 @@ def test(model, dataloader, critertion):
             correct_predictions = (predicted_labels == test_labels).sum().item()
             samples_n = test_data.size(0)
             total_acc += correct_predictions / samples_n
+            
+            # 混同行列の計算
+            all_labels.extend(test_labels.cpu().numpy())
+            all_preds.extend(predicted_labels.cpu().numpy())
+
     
     loss = total_loss / len(dataloader)
     accuracy = total_acc / len(dataloader)
+   
+    # 混同行列の計算とプロット
+    cm = confusion_matrix(all_labels, all_preds)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt="d", cmap='Blues')
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.savefig(f'confusion_matrix_{mode}.png')
+    plt.close()
+    
+    # クラスごとの正解率の計算
+    class_accuracy = cm.diagonal() / cm.sum(axis=1)
 
-    return loss.item(), accuracy
+    return loss.item(), accuracy, class_accuracy
 
 
 # 損失とaccuracyのプロット
