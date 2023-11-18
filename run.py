@@ -37,7 +37,7 @@ def main():
     output_classes = 3  # Modify this for "up", "down", "flat" classes
     initial_lr = 0.1
 
-    model = TimeSeriesTransformer(input_dim=input_dim, time_window=time_window, output_classes=output_classes)
+    model = TimeSeriesTransformer(input_dim=input_dim, time_window=time_window, output_classes=output_classes).to('cuda')
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=initial_lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=10, verbose=True)
@@ -123,8 +123,7 @@ def train(model, dataloader, criterion, optimizer):
         for batch_data, batch_labels in tepoch:
 
             # GPUにデータを送る
-            #batch_data = batch_data.to('cuda')
-            #batch_labels = batch_labels.to('cuda')
+            batch_data, batch_labels= batch_data.to('cuda'), batch_labels.to('cuda')
             
             optimizer.zero_grad() # 勾配の初期化
             outputs = model(batch_data) # 順伝播
@@ -156,6 +155,8 @@ def test(model, dataloader, critertion):
     total_loss, total_acc = 0, 0
 
     for test_data, test_labels in dataloader:
+
+        test_data, test_labels = test_data.to('cuda'), test_labels.to('cuda')
         with torch.no_grad():
             outputs = model(test_data) # 順伝播
             total_loss += critertion(outputs, test_labels) # 損失関数の計算
