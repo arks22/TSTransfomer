@@ -13,17 +13,34 @@ from dataset import TimeSeriesDataset
 from dummy_data import generate_dummy_data
 
 
+def split_data(data, labels, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
+    # データの分割
+    train_data = data[:int(len(data) * train_ratio)]
+    train_labels = labels[:int(len(data) * train_ratio)]
+    val_data = data[int(len(data) * train_ratio):int(len(data) * (train_ratio + val_ratio))]
+    val_labels = labels[int(len(data) * train_ratio):int(len(data) * (train_ratio + val_ratio))]
+    test_data = data[int(len(data) * (train_ratio + val_ratio)):]
+    test_labels = labels[int(len(data) * (train_ratio + val_ratio)):]
+
+    return train_data, train_labels, val_data, val_labels, test_data, test_labels
 
 def main():
     # ----------- Data Preparation -----------
     print('Data Preparation....')
-    batach_size = 32
+    batach_size = 64
     
-    data, labels = generate_dummy_data(10000) # ダミーの時系列データの生成
-    train_data, train_labels = data[:8000], labels[:8000] # 訓練データとラベル
-    val_data, val_labels = data[8000:9000], labels[8000:9000] # 検証データとラベル  
-    test_data, test_labels = data[9000:], labels[9000:] # テストデータとラベル
+    data = np.load('data/timeseries.npy')
+    labels = np.load('data/label.npy')
+    
+    train_data, train_labels, val_data, val_labels, test_data, test_labels = split_data(data, labels)
+    print(train_data.shape, train_labels.shape)
+    print(val_data.shape, val_labels.shape)
+    print(test_data.shape, test_labels.shape)
 
+    plt.figure(figsize=(10, 4)) 
+    plt.plot(train_data[0])
+    plt.savefig('time_series.png')
+    
     train_dataset = TimeSeriesDataset(train_data, train_labels) # データセットの作成
     train_dataloader = DataLoader(train_dataset, batch_size=batach_size, shuffle=True) # DataLoaderの作成
     
@@ -81,6 +98,7 @@ def main():
             pass
             #torch.save(model.state_dict(), f'time_series_transformer-{epoch}.pth')
 
+    # ----------- Test -----------
     test_loss, test_acc, class_accuracy = test(model, test_dataloader, criterion, mode='test')
     print(f"Test Loss: {test_loss:.4f} | Test Accuracy: {test_acc:.3f}")
 
@@ -146,8 +164,11 @@ def test(model, dataloader, critertion, mode='val'):
             # 混同行列の計算
             all_labels.extend(test_labels.cpu().numpy())
             all_preds.extend(predicted_labels.cpu().numpy())
+            
+            # 確信度スコアの取得
+            scores = torch.softmax(outputs, dim=1)
+            print("Confidence scores:\n", scores)
 
-    
     loss = total_loss / len(dataloader)
     accuracy = total_acc / len(dataloader)
    
