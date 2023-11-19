@@ -3,3 +3,5 @@ __pycache__
 *.npy
 *.jpg
 *.csv
+*.sqlite3
+results/

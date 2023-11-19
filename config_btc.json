@@ -1,0 +1,23 @@
+{
+    "data_name": "btc",
+    "output_classes_n": 2,
+    "output_classes": ["Up", "Down"],
+    "train_timeseries_path": "data/timeseries_train.npy",
+    "train_labels_path": "data/label_2class_train.npy",
+    "val_timeseries_path": "data/timeseries_val.npy",
+    "val_labels_path": "data/label_2class_val.npy",
+    "test_timeseries_path": "data/timeseries_test.npy",
+    "test_labels_path": "data/label_2class_test.npy",
+    "initial_lr": 0.5,
+    "batch_size": 128,
+    "max_epochs": 100,
+    "time_window": 80,
+    "confidence_threshold": 0.8,
+    "cnn_input_dim": 1,
+    "cnn_kernel_size": 16,
+    "cnn_stride": 8,
+    "transformer_depth": 4,
+    "transformer_heads": 4,
+    "embedding_dim": 128,
+    "dropout_rate": 0.3
+}

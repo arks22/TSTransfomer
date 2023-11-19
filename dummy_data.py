@@ -24,8 +24,8 @@ def dummy_data(data_len):
         return np.cos(n * line / 4)
 
     t = np.arange(0, data_len * time_window * step, step)
-    raw_data = sinnp(1, t) + sinnp(3, t) + sinnp(11, t) + cosnp(5, t) + cosnp(7, t) + cosnp(17, t) + sinnp(23, t)
-    #raw_data = raw_data + (np.random.rand(len(t)) * 0.05)# ノイズ項
+    raw_data = sinnp(1, t) + sinnp(3, t) + sinnp(11, t) + cosnp(5, t) + cosnp(7, t) + cosnp(17, t) + sinnp(23, t) + cosnp(31, t)
+    raw_data = raw_data + (np.random.rand(len(t)) * 0.03)# ノイズ項
 
     # 正規化
     raw_data = (raw_data - np.min(raw_data)) / (np.max(raw_data) - np.min(raw_data))

@@ -4,24 +4,43 @@ from torch.nn import functional as F
 
 
 class TimeSeriesTransformer(nn.Module):
-    def __init__(self, input_dim, time_window, output_classes, kernel_size=16, stride=8, transformer_depth=16, 
-                 transformer_heads=4, embedding_dim=128, dropout_rate=0.3):
+    def __init__(self, params):
         super(TimeSeriesTransformer, self).__init__()
+
+        self.input_dim         = params['cnn_input_dim']
+        self.time_window       = params['time_window']
+        self.output_classes    = params['output_classes_n']
+        self.kernel_size       = params['cnn_kernel_size']
+        self.stride            = params['cnn_stride']
+        self.transformer_depth = params['transformer_depth']
+        self.transformer_heads = params['transformer_heads']
+        self.embedding_dim     = params['embedding_dim']
+        self.dropout_rate      = params['dropout_rate']
         
-        self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=embedding_dim, 
-                                kernel_size=kernel_size, stride=stride)
+        self.conv1d = nn.Conv1d(in_channels=self.input_dim, out_channels=self. embedding_dim, 
+                                kernel_size=self.kernel_size, stride=self.stride)
         
-        transformer_layer = nn.TransformerEncoderLayer(d_model=embedding_dim, nhead=transformer_heads, 
-                                                       dropout=dropout_rate)
-        self.transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=transformer_depth)
+        self.transformer_layer = nn.TransformerEncoderLayer(d_model=self.embedding_dim, nhead=self.transformer_heads, dropout=self.dropout_rate)
+
+        self.transformer_encoder = nn.TransformerEncoder(self.transformer_layer, num_layers=self.transformer_depth)
+
+        self.positional_encodings = nn.Parameter(torch.zeros(self.time_window // self.stride, self.embedding_dim))
         
-        self.positional_encodings = nn.Parameter(torch.zeros(time_window // stride, embedding_dim))
-        self.mlp = nn.Sequential(
-            nn.Linear(embedding_dim, 64),  # Adjust the size as necessary
+        # MLPの層を定義
+        mlp_layers = [
+            nn.Linear(self.embedding_dim, 64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(64, output_classes)
-        )
+            nn.Dropout(self.dropout_rate),
+        ]
+         # output_classesが1の場合のみシグモイド活性化関数を追加
+        if self.output_classes == 2:
+            mlp_layers.append(nn.Linear(64, 1))
+            mlp_layers.append(nn.Sigmoid())
+        elif self.output_classes > 2:
+            mlp_layers.append(nn.Linear(64, self.output_classes))
+            
+        self.mlp = nn.Sequential(*mlp_layers)
+            
 
     def forward(self, x):
         # xは(batch_size, time_window, input_dim)の形状であることを確認

@@ -1,0 +1,17 @@
+{
+    "data_name": "dummy",
+    "output_classes_n": 3,
+    "output_classes": ["Up", "Flat", "Down"],
+    "initial_lr": 0.1,
+    "batch_size": 64,
+    "max_epochs": 100,
+    "time_window": 80,
+    "confidence_threshold": 0.8,
+    "cnn_input_dim": 1,
+    "cnn_kernel_size": 8,
+    "cnn_stride": 8,
+    "transformer_depth": 16,
+    "transformer_heads": 4,
+    "embedding_dim": 128,
+    "dropout_rate": 0.3
+}
