@@ -1,23 +1,45 @@
-from .utils import plot_confusion_matrix
 import numpy as np
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
+import os
+import seaborn as sns
 import torch
+
+def calculate_class_accuracy(cm):
+    class_accuracy = []
+    for i in range(len(cm)):
+        TP = cm[i, i]
+        FN = np.sum(cm[i, :]) - TP
+        class_accuracy.append(TP / (TP + FN) if TP + FN > 0 else 0)
+    
+    return class_accuracy
+
+# 混同行列のプロット
+def plot_confusion_matrix(cm, classes, gen_dir, title='Confusion matrix', cmap=plt.cm.Blues):
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt="d", cmap='Blues',  xticklabels=classes, yticklabels=classes)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=45)
+    path = os.path.join(gen_dir, f'{title}.png')
+    plt.savefig(path)
+    plt.close()
 
 
 # モデルをテストしてlossとaccuracyを計算
 def test(params, model, dataloader, critertion, gen_dir, mode='val'):
-    model.eval()
-    
     total_loss, total_acc = 0, 0
+    high_confidence_acc = 0
     all_labels = []
     all_preds = []
     high_confidence_preds = []
     high_confidence_labels = []
     confidence_threshold = params['confidence_threshold']
 
-    for test_data, test_labels in dataloader:
+    model.eval()
 
+    for test_data, test_labels in dataloader:
         test_data, test_labels = test_data.to('cuda'), test_labels.to('cuda')
 
         with torch.no_grad():
@@ -58,6 +80,6 @@ def test(params, model, dataloader, critertion, gen_dir, mode='val'):
     plot_confusion_matrix(cm, classes=params["output_classes"], gen_dir=gen_dir, title=f'cm_{mode}', cmap=plt.cm.Blues)
     
     # クラスごとの正解率の計算
-    class_accuracy = [np.mean(np.array(all_labels) == 0), np.mean(np.array(all_labels) == 1)]
+    class_accuracy = calculate_class_accuracy(cm)
 
-    return loss.item(), accuracy, class_accuracy
+    return loss.item(), accuracy, class_accuracy, high_confidence_acc

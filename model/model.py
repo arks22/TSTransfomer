@@ -8,17 +8,20 @@ class LastMLP(nn.Module):
         super().__init__(*args, **kwargs)
         
         self.output_classes = params['output_classes_n']
-        self.embedding_dim = params['embedding_dim']
+        self.embedding_dim  = params['embedding_dim']
+        self.dropout_rate   = params['dropout_rate']
+        self.mlp_hidden_dim = params['mlp_hidden_dim']
+        self.mlp_input_token = params['mlp_input_token']
         
         layers = [
-            nn.Linear(self.embedding_dim, 64),
+            nn.Linear(self.embedding_dim, self.mlp_hidden_dim),
             nn.ReLU(),
             nn.Dropout(self.dropout_rate),
         ]
 
         # output_classesが2の場合のみシグモイド活性化関数を追加
         if self.output_classes == 2:
-            layers.append(nn.Linear(64, 1)) #(batch_size, 1)
+            layers.append(nn.Linear(self.mlp_hidden_dim, 1)) #(batch_size, 1)
             layers.append(nn.Sigmoid())
         elif self.output_classes > 2:
             layers.append(nn.Linear(64, self.output_classes)) #(batch_size, output_classes)
@@ -26,28 +29,15 @@ class LastMLP(nn.Module):
         self.mlp = nn.Sequential(*layers)
     
     def forward(self, x):
-        x = x.mean(dim=1)               # -> (batch_size, embedding_dim)
+        if self.mlp_input_token == 'mean':
+            x = x.mean(dim=1)               # -> (batch_size, embedding_dim)
+        elif self.mlp_input_token == 'last':
+            x = x[:, -1, :]                  # -> (batch_size, embedding_dim)
+
         x = self.mlp(x)                 # -> (batch_size, output_classes)
         
         return x
 
-class LastFC(nn.Module):
-    def __init__(self, params, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        
-        self.embedding_dim = params['embedding_dim']
-        
-        self.fc = nn.Sequential(
-            nn.Linear(self.embedding_dim, 1),
-            nn.Sigmoid()
-        )
-    
-    def forward(self, x):
-        x = x[:, -1, :]               # -> (batch_size, embedding_dim)
-        x = self.fc(x)                # -> (batch_size, output_classes)
-        
-        return x
-    
 
 class TimeSeriesTransformer(nn.Module):
     def __init__(self, params):
@@ -82,10 +72,7 @@ class TimeSeriesTransformer(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(self.transformer_layer,
                                                          num_layers=self.transformer_depth)
 
-        if params['last_layer'] == 'mlp':
-            self.last_layer = LastMLP(params)
-        elif params['last_layer'] == 'fc':
-            self.last_layer = LastFC(params)
+        self.last_layer = LastMLP(params)
     
 
     def forward(self, x):
