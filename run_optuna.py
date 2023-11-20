@@ -3,31 +3,12 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from tqdm import tqdm
-from matplotlib import pyplot as plt
 import numpy as np
-from sklearn.metrics import confusion_matrix
-import json
-import argparse
-import os
-from datetime import datetime
-import shutil
 import optuna
 
-from model import TimeSeriesTransformer
-from dataset import TimeSeriesDataset
-from dummy_data import generate_dummy_data
+from model.model import TimeSeriesTransformer
+from data_provider.dataset import TimeSeriesDataset
 
-
-def split_data(data, labels, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
-    # データの分割
-    train_data = data[:int(len(data) * train_ratio)]
-    train_labels = labels[:int(len(data) * train_ratio)]
-    val_data = data[int(len(data) * train_ratio):int(len(data) * (train_ratio + val_ratio))]
-    val_labels = labels[int(len(data) * train_ratio):int(len(data) * (train_ratio + val_ratio))]
-    test_data = data[int(len(data) * (train_ratio + val_ratio)):]
-    test_labels = labels[int(len(data) * (train_ratio + val_ratio)):]
-
-    return train_data, train_labels, val_data, val_labels, test_data, test_labels
 
 def objective(trial):
     # ----------- Hyperparameters -----------
@@ -36,18 +17,27 @@ def objective(trial):
         "data_name": "btc",
         "output_classes_n": 2,
         "output_classes": ["Up", "Down"],
-        "initial_lr": trial.suggest_float('initial_lr', 1e-3, 5e-1),
-        "batch_size": trial.suggest_int('batch_size', 16, 128),
-        "max_epochs": 50,
+        "train_timeseries_path": "data/timeseries_train.npy",
+        "train_labels_path": "data/label_2class_train.npy",
+        "val_timeseries_path": "data/timeseries_val.npy",
+        "val_labels_path": "data/label_2class_val.npy",
+        "test_timeseries_path": "data/timeseries_test.npy",
+        "test_labels_path": "data/label_2class_test.npy",
+        "initial_lr": trial.suggest_float('initial_lr', 1e-3, 9e-1),
+        "batch_size": trial.suggest_categorical('batch_size', [64, 128, 256, 512, 1024, 2048]),
+        "optimizer": trial.suggest_categorical('optimizer', ['SGD', 'AdamW']),
+        "scheduler_gamma": trial.suggest_float('scheduler_gamma', 0.8, 1),
+        "max_epochs": 20,
         "time_window": 80,
         "confidence_threshold": 0.8,
         "cnn_input_dim": 1,
         "cnn_kernel_size": 16,
         "cnn_stride": 8,
-        "transformer_depth": trial.suggest_int('transfomer_depth', 4,16),
-        "transformer_heads": 4,
+        "transformer_depth": trial.suggest_categorical('transfomer_depth', [2, 4, 8, 16, 32]),
+        "transformer_heads": trial.suggest_categorical('transformer_heads', [2, 4, 8, 16, 32]),
         "embedding_dim": 128,
-        "dropout_rate": 0.3
+        "dropout_rate": trial.suggest_float('dropout_rate', 0, 0.5),
+        "last_layer": "mlp"
     }
     gen_dir = ""
 
@@ -55,35 +45,30 @@ def objective(trial):
     print('Data Preparation....')
     batach_size = params['batch_size']
     
-    if params['data_name'] == 'dummy':
-        data, labels = generate_dummy_data(100000)
-    elif params['data_name'] == 'btc':
-        data = np.load('data/timeseries.npy')
-        labels = np.load('data/label_2class.npy')
-    
-    
-    train_data, train_labels, val_data, val_labels, test_data, test_labels = split_data(data, labels)
+    train_timeseries = np.load(params['train_timeseries_path'])
+    train_labels     = np.load(params['train_labels_path'])
+    val_timeseries   = np.load(params['val_timeseries_path'])
+    val_labels       = np.load(params['val_labels_path'])
+    test_timeseries  = np.load(params['test_timeseries_path'])
+    test_labels      = np.load(params['test_labels_path'])
 
-    plt.figure(figsize=(10, 4)) 
-    plt.plot(train_data[0])
-    #plt.savefig(os.path.join(gen_dir, 'time_series.png'))
-    
-    train_dataset = TimeSeriesDataset(train_data, train_labels) # データセットの作成
-    train_dataloader = DataLoader(train_dataset, batch_size=batach_size, shuffle=True) # DataLoaderの作成
-    
-    val_dataset = TimeSeriesDataset(val_data, val_labels)
-    val_dataloader = DataLoader(val_dataset, batch_size=batach_size, shuffle=False)
-    
-    test_dataset = TimeSeriesDataset(test_data, test_labels)
-    test_dataloader = DataLoader(test_dataset, batch_size=batach_size, shuffle=False)
+    train_dataset = TimeSeriesDataset(train_timeseries, train_labels)  # データセットの作成
+    train_dataloader = DataLoader(train_dataset, batch_size=batach_size, shuffle=True, num_workers=4)  # DataLoaderの作成
+
+    val_dataset = TimeSeriesDataset(val_timeseries, val_labels)
+    val_dataloader = DataLoader(val_dataset, batch_size=batach_size, shuffle=False, num_workers=4)
+
+    test_dataset = TimeSeriesDataset(test_timeseries, test_labels)
+    test_dataloader = DataLoader(test_dataset, batch_size=batach_size, shuffle=False, num_workers=4)
     print(f'Train Data: {len(train_dataset)} | Val Data: {len(val_dataset)} | Test Data: {len(test_dataset)}')
 
     # ----------- Model Definition -----------
     print('Model Definition....')
     model = TimeSeriesTransformer(params).to('cuda')
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=params["initial_lr"])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=10, verbose=True)
+    criterion = nn.BCELoss()
+    optimizer_class = getattr(torch.optim, params["optimizer"])
+    optimizer = optimizer_class(model.parameters(), lr=params["initial_lr"])
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=params["scheduler_gamma"])
 
     # ----------- Training -----------
     print('Training....')
@@ -97,8 +82,11 @@ def objective(trial):
         # Train
         train_loss, train_acc = train(params, model, train_dataloader, criterion, optimizer) 
 
+        # Scheduler
+        scheduler.step()
+
         # Validation
-        val_loss, val_acc, _ = test(params, model, val_dataloader, criterion, gen_dir)
+        val_loss, val_acc = test(params, model, val_dataloader, criterion, gen_dir)
         val_loss, val_acc = round(val_loss, 3), round(val_acc, 3)
 
         # Print
@@ -106,7 +94,7 @@ def objective(trial):
 
         
     # ----------- Test -----------
-    test_loss, test_acc, class_accuracy = test(params, model, test_dataloader, criterion, gen_dir, mode='test')
+    test_loss, test_acc = test(params, model, test_dataloader, criterion, gen_dir, mode='test')
 
     return test_acc
     
@@ -124,7 +112,9 @@ def train(params, model, dataloader, criterion, optimizer):
             batch_data, batch_labels= batch_data.to('cuda'), batch_labels.to('cuda')
             
             optimizer.zero_grad() # 勾配の初期化
-            outputs = model(batch_data) # 順伝播
+            outputs = model(batch_data).squeeze() # 順伝播 # 次元を削減
+            batch_labels = batch_labels.float() # BCELossの場合はラベルをfloatに変換
+
             loss = criterion(outputs, batch_labels) # 損失関数の計算
 
             # 逆伝播
@@ -132,7 +122,8 @@ def train(params, model, dataloader, criterion, optimizer):
             optimizer.step() # パラメータの更新
 
             # 正解数の計算
-            _, predicted_labels = torch.max(outputs, 1)
+            predicted_labels = outputs.round()
+
             correct_predictions = (predicted_labels == batch_labels).sum().item()
             samples_n = batch_data.size(0)
             
@@ -160,47 +151,27 @@ def test(params, model, dataloader, critertion, gen_dir, mode='val'):
     for test_data, test_labels in dataloader:
 
         test_data, test_labels = test_data.to('cuda'), test_labels.to('cuda')
+        test_labels = test_labels.float()
+
         with torch.no_grad():
-            outputs = model(test_data) # 順伝播
+            outputs = model(test_data).squeeze() # 順伝播
             total_loss += critertion(outputs, test_labels) # 損失関数の計算
 
-            # 確信度スコアの取得
-            scores = torch.softmax(outputs, dim=1)
-
-            # accuracyの計算
-            _, predicted_labels = torch.max(outputs, 1)
-            high_confidence = scores.max(dim=1).values > confidence_threshold
-
-            high_confidence_preds.extend(predicted_labels[high_confidence].cpu().numpy())
-            high_confidence_labels.extend(test_labels[high_confidence].cpu().numpy())
+            predicted_labels = outputs.round()
 
             correct_predictions = (predicted_labels == test_labels).sum().item()
             samples_n = test_data.size(0)
             total_acc += correct_predictions / samples_n
             
-            # 混同行列の計算
-            all_labels.extend(test_labels.cpu().numpy())
-            all_preds.extend(predicted_labels.cpu().numpy())
-            
-    # 高確信度の予測に基づく混同行列と正解率の計算
-    if high_confidence_preds:
-        cm = confusion_matrix(high_confidence_labels, high_confidence_preds)
-        high_confidence_acc = np.mean(np.array(high_confidence_labels) == np.array(high_confidence_preds))
-        #print("High Confidence Accuracy: ", high_confidence_acc)
-
     loss = total_loss / len(dataloader)
     accuracy = total_acc / len(dataloader)
    
-    # 混同行列の計算とプロット
-    cm = confusion_matrix(all_labels, all_preds)
-    
-    # クラスごとの正解率の計算
-    class_accuracy = cm.diagonal() / cm.sum(axis=1)
-
-    return loss.item(), accuracy, class_accuracy
+    return loss.item(), accuracy
 
 
 if __name__ == '__main__':
-    study = optuna.create_study(direction='maximize', storage='sqlite:///db.sqlite3', load_if_exists=True, study_name='btc_50epochs')
+
+    study = optuna.create_study(direction='maximize', storage='sqlite:///db.sqlite3', load_if_exists=True, study_name='btc_20')
     study.optimize(objective, n_trials=100)
-    print(f"Best value: {study.best_value} (params: {study.best_params})")
+
+

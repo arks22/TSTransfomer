@@ -30,12 +30,13 @@ def reshape_data(data, time_window, shift=0):
     return reshaped_data
     
     
-def label_price_movement_2class(data):
+def label_price_movement_2class(data, time_window):
     print(f'Labeling.... ')
     labels = []
     for i in range(len(data) - 1):
-        current_price = data[i, -1]
-        future_price = data[i+1, 0]
+        current_price = data[i, -1] # 現在のタイムウィンドウの最後の値
+        quaterted_time_window = time_window // 4
+        future_price = sum(data[i+1 , :quaterted_time_window ]) / len(data[i+1, :quaterted_time_window ]) #
 
         if future_price > current_price:
             labels.append(0)  # 上昇
@@ -80,24 +81,28 @@ def preprocessing(data):
 
     return data
 
-def plot_data(data, time_window, labels):
+def plot_data(data, time_window, labels, slice, title='time_series.png'):
 
     plt.figure(figsize=(40, 8))
+    quaterted_time_window = time_window // 4
 
     # 0から240のデータポイントをプロット
-    for i in range(20000,20010):
+    for i in range(slice[0], slice[1]):
         color = 'g' if labels[i] == 0 else 'r'  # 緑色は上昇、赤色は下落を示す
-        
         window_data = data[i]
+        avg_price = sum(window_data[:quaterted_time_window]) / len(window_data[:quaterted_time_window])
         time_steps = np.arange(i * time_window, (i + 1) * time_window)
         plt.plot(time_steps, window_data, color=color)
         plt.axvline(x=(i + 1) * time_window - 1, color='gray', linestyle='--')
+        # タイムウィンドウ内における平均価格を水平線でプロット
+
+        plt.hlines(y=avg_price, xmin=i * time_window, xmax=(i + 1) * time_window - 1)
 
     plt.xlabel('Time Step')
     plt.ylabel('Price')
     plt.title('Time Series Data Plot')
     plt.legend()
-    plt.savefig('time_series.png')
+    plt.savefig(title)
 
 
 def split_data(data, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
@@ -123,9 +128,9 @@ def main():
     train_timeseries, val_timeseries, test_timeseries = split_data(timeseries)
     
     # ラベルの作成
-    train_label = label_price_movement_2class(train_timeseries)
-    val_label   = label_price_movement_2class(val_timeseries)
-    test_label  = label_price_movement_2class(test_timeseries)
+    train_label = label_price_movement_2class(train_timeseries, time_window)
+    val_label   = label_price_movement_2class(val_timeseries, time_window)
+    test_label  = label_price_movement_2class(test_timeseries, time_window)
 
     # 最後のデータのみラベルがないため削除
     train_timeseries = train_timeseries[:-1]
@@ -135,14 +140,15 @@ def main():
     # データ拡張
     augument_timeseries_list = []
     augument_label_list = []
-    for i in range(1, 10):
+    shift_step = 4
+    arange_shift = np.arange(shift_step, 20*shift_step , shift_step) # 4, 8, 12, ... , 76
+    for shift in arange_shift:
         # データのシフト
-        shift = 8 * i  # シフト値を 8, 16, 24, ... と増加させる
         print(f'Shift: {shift}')
         train_timeseries_shited = reshape_data(train_timeseries, time_window, shift=shift)
         
         # ラベルの作成
-        train_label_shifted = label_price_movement_2class(train_timeseries_shited)
+        train_label_shifted = label_price_movement_2class(train_timeseries_shited, time_window)
 
         # 最後のデータはラベルがないため削除
         train_timeseries_shited = train_timeseries_shited[:-1]
@@ -154,10 +160,15 @@ def main():
     train_timeseries = np.concatenate([train_timeseries] + augument_timeseries_list, axis=0)
     train_label      = np.concatenate([train_label]      + augument_label_list, axis=0)
 
+    plot_data(train_timeseries, time_window, train_label, slice=[680000, 680010], title='train_btc.png')
+    plot_data(val_timeseries, time_window, val_label, slice=[1000, 1010], title='val_btc.png')
+    plot_data(test_timeseries, time_window, test_label, slice=[1000, 1010], title='test_btc.png')
+
     # 標準化(元のデータでラベルを作成した後に行う)
     train_timeseries = preprocessing(train_timeseries)
     val_timeseries   = preprocessing(val_timeseries)
     test_timeseries  = preprocessing(test_timeseries)
+    
     
     print(f'TRAIN | Time Series Data: {train_timeseries.shape} | Label Data: {train_label.shape}')
     print(f'VAL   | Time Series Data: {val_timeseries.shape} | Label Data: {val_label.shape}')
@@ -166,16 +177,18 @@ def main():
     train_timeseries_path = 'data/timeseries_train.npy'
     val_timeseries_path   = 'data/timeseries_val.npy'
     test_timeseries_path  = 'data/timeseries_test.npy'
-    train_label_path      = 'data/label_train.npy'
-    val_label_path        = 'data/label_val.npy'
-    test_label_path       = 'data/label_test.npy'
+    train_label_path      = 'data/label_2class_train.npy'
+    val_label_path        = 'data/label_2class_val.npy'
+    test_label_path       = 'data/label_2class_test.npy'
     
+    """
     np.save(train_timeseries_path, train_timeseries)
     np.save(val_timeseries_path, val_timeseries)
     np.save(test_timeseries_path, test_timeseries)
     np.save(train_label_path, train_label)
     np.save(val_label_path, val_label)
     np.save(test_label_path, test_label)
+    """
     
 if __name__ == '__main__':
     main()
