@@ -5,8 +5,8 @@ import json
 import os
 from datetime import datetime
 
-def save_model(model, gen_dir, epoch):
-    model_path = os.path.join(gen_dir, f'model_{epoch}.pth')
+def save_model(model, gen_dir, title):
+    model_path = os.path.join(gen_dir, title)
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
     

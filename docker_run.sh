@@ -1,1 +1,0 @@
-sudo docker run --rm --name "sasaki_tst" --gpus '"device=0"' --shm-size 4096mb -v /home/sasaki/TSTransformer:/home/TSTransformer -it sasaki/tst

@@ -6,14 +6,22 @@ import matplotlib.pyplot as plt
 def open_column_as_numpy(file_path):
     print(f'Open: {file_path}')
     # CSVファイルの読み込み
-    data = pd.read_csv(file_path, index_col=0, header=[0, 1]).sort_index(axis=1)
+    df = pd.read_csv(file_path, index_col=0, header=[0, 1]).sort_index(axis=1)
 
-    # 'open'の選択
-    pandas_data = data['Weighted_Price']
-    pandas_data = pandas_data.dropna()
+    # 変化率の計算
+    df['Returns'] = df['Weighted_Price'].pct_change()
+    
+    window_size = 30
+    df['Volatility'] = df['Returns'].rolling(window=window_size).std()
+    
+    # 欠損値の削除
+    df = df.dropna()
+    
+    weighted_price = df['Weighted_Price']
 
     # NumPy配列に変換
-    numpy_data = pandas_data.to_numpy()
+    numpy_data = weighted_price.to_numpy()
+    np_df = df.to_numpy()
 
     return numpy_data
 
@@ -29,14 +37,30 @@ def reshape_data(data, time_window, shift=0):
     
     return reshaped_data
     
+def label_regression(data, time_window):
+    print(f'Labeling.... ')
+    labels = []
+    for i in range(len(data) - 1):
+        quaterted_time_window = time_window // 4
+        current_price = data[i, -1]
+        future_window = data[i+1, :quaterted_time_window]
+        future_price = sum(future_window) / len(future_window)
+        
+        change_rate = future_price / current_price - 1
+        labels.append(change_rate)
+
+    return np.array(labels)
+    
     
 def label_price_movement_2class(data, time_window):
     print(f'Labeling.... ')
     labels = []
     for i in range(len(data) - 1):
         current_price = data[i, -1] # 現在のタイムウィンドウの最後の値
-        quaterted_time_window = time_window // 4
-        future_price = sum(data[i+1 , :quaterted_time_window ]) / len(data[i+1, :quaterted_time_window ]) #
+        #quaterted_time_window = time_window // 4
+        #future_window = data[i+1, :quaterted_time_window]
+        #future_price = sum(future_window) / len(future_window)
+        future_price = data[i+1, 0]
 
         if future_price > current_price:
             labels.append(0)  # 上昇
@@ -60,7 +84,6 @@ def label_price_movement_3class(data, threshold):
             labels.append(2) # 下落
         else:
             labels.append(1) # 変化なし
-
 
     print('[ Up | Flat | Down ]')
     print(np.bincount(labels))
@@ -90,13 +113,13 @@ def plot_data(data, time_window, labels, slice, title='time_series.png'):
     for i in range(slice[0], slice[1]):
         color = 'g' if labels[i] == 0 else 'r'  # 緑色は上昇、赤色は下落を示す
         window_data = data[i]
-        avg_price = sum(window_data[:quaterted_time_window]) / len(window_data[:quaterted_time_window])
         time_steps = np.arange(i * time_window, (i + 1) * time_window)
+
         plt.plot(time_steps, window_data, color=color)
         plt.axvline(x=(i + 1) * time_window - 1, color='gray', linestyle='--')
         # タイムウィンドウ内における平均価格を水平線でプロット
-
-        plt.hlines(y=avg_price, xmin=i * time_window, xmax=(i + 1) * time_window - 1)
+        #plt.hlines(y=avg_price, xmin=i * time_window, xmax=(i + 1) * time_window - 1, color=color, linestyle='--', label=f'{avg_price:.3f}')
+        #plt.text(x=i * time_window - 1, y=avg_price, s=f'{label_price:.3f}', color='black', fontsize=20)
 
     plt.xlabel('Time Step')
     plt.ylabel('Price')
@@ -119,6 +142,7 @@ def main():
 
     time_window = 80
     threshold = 0.0002
+    problem = '2class'
 
     # 時系列データの作成
     timeseries = open_column_as_numpy(source_path)
@@ -126,16 +150,26 @@ def main():
     
     # valとtestの分割
     train_timeseries, val_timeseries, test_timeseries = split_data(timeseries)
+    finetune_rate = 0.2
+    finetune_timeseries = train_timeseries[-int(len(train_timeseries) * finetune_rate):]
     
     # ラベルの作成
-    train_label = label_price_movement_2class(train_timeseries, time_window)
-    val_label   = label_price_movement_2class(val_timeseries, time_window)
-    test_label  = label_price_movement_2class(test_timeseries, time_window)
+    if problem == '2class':
+        train_label    = label_price_movement_2class(train_timeseries, time_window)
+        val_label      = label_price_movement_2class(val_timeseries, time_window)
+        test_label     = label_price_movement_2class(test_timeseries, time_window)
+        finetune_label = label_price_movement_2class(finetune_timeseries, time_window)
+    elif problem == 'regression':
+        train_label    = label_regression(train_timeseries, time_window)
+        val_label      = label_regression(val_timeseries, time_window)
+        test_label     = label_regression(test_timeseries, time_window)
+        finetune_label = label_regression(finetune_timeseries, time_window)
 
     # 最後のデータのみラベルがないため削除
-    train_timeseries = train_timeseries[:-1]
-    val_timeseries   = val_timeseries[:-1]
-    test_timeseries  = test_timeseries[:-1]
+    train_timeseries    = train_timeseries[:-1]
+    val_timeseries      = val_timeseries[:-1]
+    test_timeseries     = test_timeseries[:-1]
+    finetune_timeseries = finetune_timeseries[:-1]
     
     # データ拡張
     augument_timeseries_list = []
@@ -148,7 +182,10 @@ def main():
         train_timeseries_shited = reshape_data(train_timeseries, time_window, shift=shift)
         
         # ラベルの作成
-        train_label_shifted = label_price_movement_2class(train_timeseries_shited, time_window)
+        if problem == '2class':
+            train_label_shifted = label_price_movement_2class(train_timeseries_shited, time_window)
+        elif problem == 'regression':
+            train_label_shifted = label_regression(train_timeseries_shited, time_window)
 
         # 最後のデータはラベルがないため削除
         train_timeseries_shited = train_timeseries_shited[:-1]
@@ -165,30 +202,33 @@ def main():
     plot_data(test_timeseries, time_window, test_label, slice=[1000, 1010], title='test_btc.png')
 
     # 標準化(元のデータでラベルを作成した後に行う)
-    train_timeseries = preprocessing(train_timeseries)
-    val_timeseries   = preprocessing(val_timeseries)
-    test_timeseries  = preprocessing(test_timeseries)
-    
-    
-    print(f'TRAIN | Time Series Data: {train_timeseries.shape} | Label Data: {train_label.shape}')
-    print(f'VAL   | Time Series Data: {val_timeseries.shape} | Label Data: {val_label.shape}')
-    print(f'TEST  | Time Series Data: {test_timeseries.shape} | Label Data: {test_label.shape}')
+    train_timeseries    = preprocessing(train_timeseries)
+    val_timeseries      = preprocessing(val_timeseries)
+    test_timeseries     = preprocessing(test_timeseries)
+    finetune_timeseries = preprocessing(finetune_timeseries)
+     
+    print(f'TRAIN    | Time Series Data: {train_timeseries.shape} | Label Data: {train_label.shape}')
+    print(f'VAL      | Time Series Data: {val_timeseries.shape} | Label Data: {val_label.shape}')
+    print(f'TEST     | Time Series Data: {test_timeseries.shape} | Label Data: {test_label.shape}')
+    print(f'FINETUNE | Time Series Data: {finetune_timeseries.shape} | Label Data: {finetune_label.shape}')
 
-    train_timeseries_path = 'data/timeseries_train.npy'
-    val_timeseries_path   = 'data/timeseries_val.npy'
-    test_timeseries_path  = 'data/timeseries_test.npy'
-    train_label_path      = 'data/label_2class_train.npy'
-    val_label_path        = 'data/label_2class_val.npy'
-    test_label_path       = 'data/label_2class_test.npy'
+    train_timeseries_path    = 'data/timeseries_train.npy'
+    val_timeseries_path      = 'data/timeseries_val.npy'
+    test_timeseries_path     = 'data/timeseries_test.npy'
+    finetune_timeseries_path = 'data/timeseries_finetune.npy'
+    train_label_path         = f'data/label_{problem}_train.npy'
+    val_label_path           = f'data/label_{problem}_val.npy'
+    test_label_path          = f'data/label_{problem}_test.npy'
+    finetune_label_path      = f'data/label_{problem}_finetune.npy'
     
-    """
     np.save(train_timeseries_path, train_timeseries)
     np.save(val_timeseries_path, val_timeseries)
     np.save(test_timeseries_path, test_timeseries)
     np.save(train_label_path, train_label)
     np.save(val_label_path, val_label)
     np.save(test_label_path, test_label)
-    """
+    np.save(finetune_label_path, finetune_label)
+    np.save(finetune_timeseries_path, finetune_timeseries)
     
 if __name__ == '__main__':
     main()

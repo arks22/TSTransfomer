@@ -3,8 +3,8 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class LastMLP(nn.Module):
-    def __init__(self, params, *args, **kwargs) -> None:
+class MLPHead(nn.Module):
+    def __init__(self, params, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.output_classes = params['output_classes_n']
@@ -20,10 +20,12 @@ class LastMLP(nn.Module):
         ]
 
         # output_classesが2の場合のみシグモイド活性化関数を追加
-        if self.output_classes == 2:
+        if self.output_classes == 1:  # 回帰問題
+            layers.append(nn.Linear(self.mlp_hidden_dim, 1))
+        elif self.output_classes == 2: # 2値分類問題
             layers.append(nn.Linear(self.mlp_hidden_dim, 1)) #(batch_size, 1)
             layers.append(nn.Sigmoid())
-        elif self.output_classes > 2:
+        elif self.output_classes > 2: # 多クラス分類問題
             layers.append(nn.Linear(64, self.output_classes)) #(batch_size, output_classes)
             
         self.mlp = nn.Sequential(*layers)
@@ -55,7 +57,7 @@ class TimeSeriesTransformer(nn.Module):
         
         # CNNの層を定義
         self.conv1d = nn.Conv1d(in_channels=self.input_dim,
-                                out_channels=self. embedding_dim, 
+                                out_channels=self.embedding_dim, 
                                 kernel_size=self.kernel_size,
                                 stride=self.stride)
 
@@ -72,7 +74,7 @@ class TimeSeriesTransformer(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(self.transformer_layer,
                                                          num_layers=self.transformer_depth)
 
-        self.last_layer = LastMLP(params)
+        self.head = MLPHead(params)
     
 
     def forward(self, x):
@@ -88,6 +90,6 @@ class TimeSeriesTransformer(nn.Module):
         
         x = x.permute(1, 0, 2)          # -> (batch_size, new_time_window, embedding_dim)
         
-        x = self.last_layer(x)                 # -> (batch_size, output_classes)
+        x = self.head(x)                 # -> (batch_size, output_classes)
 
         return x

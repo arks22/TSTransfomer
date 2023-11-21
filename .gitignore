@@ -5,3 +5,4 @@ __pycache__
 *.csv
 *.sqlite3
 results/
+run_docker.sh

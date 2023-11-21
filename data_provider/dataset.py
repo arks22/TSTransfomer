@@ -10,7 +10,7 @@ class TimeSeriesDataset(Dataset):
         data = data[:, :, np.newaxis] # (80, 1250) -> (80, 1250, 1)
         # NumPy配列をPyTorchテンソルに変換
         self.data   = torch.from_numpy(data).float()
-        self.labels = torch.from_numpy(labels).long()
+        self.labels = torch.from_numpy(labels).float()
 
     def __len__(self):
         return len(self.data)

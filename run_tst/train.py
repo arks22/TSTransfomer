@@ -9,7 +9,7 @@ def train(params, model, dataloader, criterion, optimizer):
         for batch_data, batch_labels in tepoch:
 
             # GPUにデータを送る
-            batch_data, batch_labels= batch_data.to('cuda'), batch_labels.to('cuda')
+            batch_data, batch_labels= batch_data.to(params['device']), batch_labels.to(params['device'])
             
             optimizer.zero_grad() # 勾配の初期化
             outputs = model(batch_data).squeeze() # 順伝播 # 次元を削減
@@ -28,7 +28,7 @@ def train(params, model, dataloader, criterion, optimizer):
             total_loss += loss.item()
             total_acc += correct_predictions / samples_n
             
-    loss_epoch = round(total_loss / len(dataloader), 3)
-    acc_epoch = round(total_acc / len(dataloader) ,3)
+    loss_epoch = total_loss / len(dataloader)
+    acc_epoch = total_acc / len(dataloader)
     
     return loss_epoch, acc_epoch
