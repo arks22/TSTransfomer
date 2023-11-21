@@ -1,15 +1,15 @@
 {
     "data_name": "btc",
-    "device": "cpu",
+    "device": "cuda",
     "time_window": 80,
     "output_classes_n": 2,
     "output_classes": ["Up", "Down"],
     "train_timeseries_path": "data/timeseries_train.npy",
-    "train_labels_path": "data/label_2class_train.npy",
-    "val_timeseries_path": "data/timeseries_val.npy",
-    "val_labels_path": "data/label_2class_val.npy",
-    "test_timeseries_path": "data/timeseries_test.npy",
-    "test_labels_path": "data/label_2class_test.npy",
+    "val_timeseries_path":   "data/timeseries_test.npy",
+    "test_timeseries_path":  "data/timeseries_test.npy",
+    "train_labels_path":     "data/label_2class_train.npy",
+    "val_labels_path":       "data/label_2class_test.npy",
+    "test_labels_path":      "data/label_2class_test.npy",
     "batch_size": 512,
     "criterion": "BCELoss",
     "train_initial_lr": 0.1,
@@ -17,7 +17,7 @@
     "train_optimizer": "SGD",
     "train_scheduler_gamma": 0.8,
     "confidence_threshold": 0.7,
-    "finetune": true,
+    "finetune": false,
     "finetune_timeseries_path": "data/timeseries_finetune.npy",
     "finetune_labels_path": "data/label_2class_finetune.npy",
     "finetune_epochs": 10,
@@ -33,6 +33,6 @@
     "dropout_rate": 0.4,
     "mlp_hidden_dim": 32,
     "mlp_input_token": "last",
-    "pretrained_model_path": "results/btc/20231121_032527/model_finetune_1.pth"
+    "pretrained_model_path": ""
 
 }

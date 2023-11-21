@@ -24,6 +24,7 @@ def get_dataloader(params):
         finetune_dataloader = DataLoader(finetune_dataset, batch_size=batch_size, shuffle=True)
     else:
         finetune_dataloader = None
+        finetune_dataset = []
 
     train_dataset = TimeSeriesDataset(train_timeseries, train_labels)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)

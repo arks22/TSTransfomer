@@ -17,7 +17,7 @@ def open_column_as_numpy(file_path):
     # 欠損値の削除
     df = df.dropna()
     
-    weighted_price = df['Weighted_Price']
+    weighted_price = df['Close']
 
     # NumPy配列に変換
     numpy_data = weighted_price.to_numpy()
@@ -30,7 +30,6 @@ def reshape_data(data, time_window, shift=0):
     if shift < 0:
         raise ValueError("Shift must be a non-negative integer")
 
-    print(f'Reshape: {data.shape} -> {(data.shape[0] - shift) // time_window, time_window}')
     data_len = (len(data) - shift) // time_window
     # 正のシフトを適用
     reshaped_data = data[shift:data_len * time_window + shift].reshape(-1, time_window)
@@ -38,7 +37,6 @@ def reshape_data(data, time_window, shift=0):
     return reshaped_data
     
 def label_regression(data, time_window):
-    print(f'Labeling.... ')
     labels = []
     for i in range(len(data) - 1):
         quaterted_time_window = time_window // 4
@@ -53,26 +51,21 @@ def label_regression(data, time_window):
     
     
 def label_price_movement_2class(data, time_window):
-    print(f'Labeling.... ')
     labels = []
     for i in range(len(data) - 1):
         current_price = data[i, -1] # 現在のタイムウィンドウの最後の値
-        #quaterted_time_window = time_window // 4
-        #future_window = data[i+1, :quaterted_time_window]
-        #future_price = sum(future_window) / len(future_window)
-        future_price = data[i+1, 0]
+        future_window = data[i+1, :5]
+        future_price = sum(future_window) / len(future_window)
 
         if future_price > current_price:
             labels.append(0)  # 上昇
         else:
             labels.append(1)  # 下落
 
-    print(f'Labels: {np.bincount(labels)}')
     return np.array(labels)
 
     
 def label_price_movement_3class(data, threshold):
-    print(f'Labeling.... ')
     labels = []
     for i in range(len(data) - 1):
         current_price = data[i, -1]
@@ -85,14 +78,11 @@ def label_price_movement_3class(data, threshold):
         else:
             labels.append(1) # 変化なし
 
-    print('[ Up | Flat | Down ]')
-    print(np.bincount(labels))
     return np.array(labels)
 
 
 # 標準化
 def preprocessing(data):
-    print(f'Preprocessing.... ')
     # 各timewindow内で標準化
     """
     for i in range(len(data)):
@@ -107,36 +97,53 @@ def preprocessing(data):
 def plot_data(data, time_window, labels, slice, title='time_series.png'):
 
     plt.figure(figsize=(40, 8))
-    quaterted_time_window = time_window // 4
 
     # 0から240のデータポイントをプロット
     for i in range(slice[0], slice[1]):
         color = 'g' if labels[i] == 0 else 'r'  # 緑色は上昇、赤色は下落を示す
-        window_data = data[i]
         time_steps = np.arange(i * time_window, (i + 1) * time_window)
+        window_data = data[i]
 
-        plt.plot(time_steps, window_data, color=color)
+        plt.plot(time_steps, window_data, color='orange')
         plt.axvline(x=(i + 1) * time_window - 1, color='gray', linestyle='--')
-        # タイムウィンドウ内における平均価格を水平線でプロット
-        #plt.hlines(y=avg_price, xmin=i * time_window, xmax=(i + 1) * time_window - 1, color=color, linestyle='--', label=f'{avg_price:.3f}')
+
+        # 次のタイムウィンドウ内における平均価格を水平線でプロット
+        next_lavel_window = data[i+1, :5]
+        avg_price = sum(next_lavel_window) / len(next_lavel_window)
+        plt.hlines(y=avg_price, xmin=(i+1) * time_window, xmax=(i+1) * time_window + 5, color=color, linestyle='-')
+
+        # 現在のタイムウィンドウ内の最後の価格を水平線でプロット
+        last_price = data[i, -1]
+        plt.hlines(y=last_price, xmin=(i+1) * time_window, xmax=(i+1) * time_window + 5, color='gray', linestyle='-')
+
         #plt.text(x=i * time_window - 1, y=avg_price, s=f'{label_price:.3f}', color='black', fontsize=20)
 
     plt.xlabel('Time Step')
     plt.ylabel('Price')
     plt.title('Time Series Data Plot')
-    plt.legend()
     plt.savefig(title)
 
 
-def split_data(data, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
-    # データの分割
-    train_data   = data[:int(len(data) * train_ratio)]
-    val_data     = data[int(len(data) * train_ratio):int(len(data) * (train_ratio + val_ratio))]
-    test_data    = data[int(len(data) * (train_ratio + val_ratio)):]
+# データの分割
+def split_data(data, ratio_list):
+    added_ratio = 0
+    dataset_list = []
 
-    return train_data, val_data, test_data
+    for i in range(len(ratio_list)):
+        ratio = added_ratio + int(len(data) * ratio_list[i]) # 0 + 10000 * 0.9 = 9000
+        dataset_list.append(data[added_ratio:added_ratio + ratio])
 
+        print(f'{i}: {added_ratio} ~ {ratio}')
+        added_ratio += ratio
     
+    return dataset_list
+
+
+def delete_last_seq(timeseries):
+    timeseries = timeseries[:-1]
+    return timeseries
+    
+
 def main():
     source_path = 'data/btc.csv'
 
@@ -149,86 +156,71 @@ def main():
     timeseries = reshape_data(timeseries , time_window)
     
     # valとtestの分割
-    train_timeseries, val_timeseries, test_timeseries = split_data(timeseries)
-    finetune_rate = 0.2
-    finetune_timeseries = train_timeseries[-int(len(train_timeseries) * finetune_rate):]
+    timeseries_list = split_data(timeseries, [0.9, 0.1])
+
+    #finetune_rate = 0.2
+    #finetune_timeseries = timeseries_dataset_list[-int(len(train_timeseries) * finetune_rate):]
     
     # ラベルの作成
-    if problem == '2class':
-        train_label    = label_price_movement_2class(train_timeseries, time_window)
-        val_label      = label_price_movement_2class(val_timeseries, time_window)
-        test_label     = label_price_movement_2class(test_timeseries, time_window)
-        finetune_label = label_price_movement_2class(finetune_timeseries, time_window)
-    elif problem == 'regression':
-        train_label    = label_regression(train_timeseries, time_window)
-        val_label      = label_regression(val_timeseries, time_window)
-        test_label     = label_regression(test_timeseries, time_window)
-        finetune_label = label_regression(finetune_timeseries, time_window)
+    label_list = []
+    for i in range(len(timeseries_list)):
+        if problem == '2class':
+            label_list.append(label_price_movement_2class(timeseries_list[i], time_window))
+        elif problem == '3class':
+            label_list.append(label_price_movement_3class(timeseries_list[i], threshold))
+        elif problem == 'regression':
+            label_list.append(label_regression(timeseries_list[i], time_window))
 
-    # 最後のデータのみラベルがないため削除
-    train_timeseries    = train_timeseries[:-1]
-    val_timeseries      = val_timeseries[:-1]
-    test_timeseries     = test_timeseries[:-1]
-    finetune_timeseries = finetune_timeseries[:-1]
+        # 最後のデータのみラベルがないため削除
+        timeseries_list[i] = delete_last_seq(timeseries_list[i]) 
     
     # データ拡張
-    augument_timeseries_list = []
-    augument_label_list = []
-    shift_step = 4
-    arange_shift = np.arange(shift_step, 20*shift_step , shift_step) # 4, 8, 12, ... , 76
-    for shift in arange_shift:
-        # データのシフト
-        print(f'Shift: {shift}')
-        train_timeseries_shited = reshape_data(train_timeseries, time_window, shift=shift)
-        
-        # ラベルの作成
-        if problem == '2class':
-            train_label_shifted = label_price_movement_2class(train_timeseries_shited, time_window)
-        elif problem == 'regression':
-            train_label_shifted = label_regression(train_timeseries_shited, time_window)
+    for i in range(len(timeseries_list)):
+        augument_timeseries_list = []
+        augument_label_list = []
+        shift_step = 5
+        arange_shift = np.arange(shift_step, time_window, shift_step) # 4, 8, 12, ... , 76
+        for shift in arange_shift:
+            # データのシフト
+            timeseries_shited = reshape_data(timeseries_list[i], time_window, shift=shift)
+            
+            # ラベルの作成
+            if problem == '2class':
+                label_shifted = label_price_movement_2class(timeseries_shited, time_window)
+            elif problem == '3class':
+                label_shifted = label_price_movement_3class(timeseries_shited, threshold)
+            elif problem == 'regression':
+                label_shifted = label_regression(timeseries_shited, time_window)
 
-        # 最後のデータはラベルがないため削除
-        train_timeseries_shited = train_timeseries_shited[:-1]
+            # 最後のデータはラベルがないため削除
+            timeseries_shited = delete_last_seq(timeseries_shited)
 
-        augument_timeseries_list.append(train_timeseries_shited)
-        augument_label_list.append(train_label_shifted)
+            # リストに追加
+            augument_timeseries_list.append(timeseries_shited)
+            augument_label_list.append(label_shifted)
     
-    # データの結合
-    train_timeseries = np.concatenate([train_timeseries] + augument_timeseries_list, axis=0)
-    train_label      = np.concatenate([train_label]      + augument_label_list, axis=0)
+        # データの結合
+        timeseries_list[i] = np.concatenate([timeseries_list[i]] + augument_timeseries_list, axis=0)
+        label_list[i]      = np.concatenate([label_list[i]]      + augument_label_list, axis=0)
 
-    plot_data(train_timeseries, time_window, train_label, slice=[680000, 680010], title='train_btc.png')
-    plot_data(val_timeseries, time_window, val_label, slice=[1000, 1010], title='val_btc.png')
-    plot_data(test_timeseries, time_window, test_label, slice=[1000, 1010], title='test_btc.png')
+    # プロット
+    data_name_list = ['train', 'test', 'finetune']
+    for i in range(len(timeseries_list)):
+        for j in range(7):
+            k = j * 100
+            slice = [k, k + 10]
+            plot_data(timeseries_list[i], time_window, label_list[i], slice=slice, title=f'{data_name_list[i]}_{j}.png')
 
-    # 標準化(元のデータでラベルを作成した後に行う)
-    train_timeseries    = preprocessing(train_timeseries)
-    val_timeseries      = preprocessing(val_timeseries)
-    test_timeseries     = preprocessing(test_timeseries)
-    finetune_timeseries = preprocessing(finetune_timeseries)
+        # 標準化(元のデータでラベルを作成した後に行う)
+        timeseries_list[i] = preprocessing(timeseries_list[i])
      
-    print(f'TRAIN    | Time Series Data: {train_timeseries.shape} | Label Data: {train_label.shape}')
-    print(f'VAL      | Time Series Data: {val_timeseries.shape} | Label Data: {val_label.shape}')
-    print(f'TEST     | Time Series Data: {test_timeseries.shape} | Label Data: {test_label.shape}')
-    print(f'FINETUNE | Time Series Data: {finetune_timeseries.shape} | Label Data: {finetune_label.shape}')
-
-    train_timeseries_path    = 'data/timeseries_train.npy'
-    val_timeseries_path      = 'data/timeseries_val.npy'
-    test_timeseries_path     = 'data/timeseries_test.npy'
-    finetune_timeseries_path = 'data/timeseries_finetune.npy'
-    train_label_path         = f'data/label_{problem}_train.npy'
-    val_label_path           = f'data/label_{problem}_val.npy'
-    test_label_path          = f'data/label_{problem}_test.npy'
-    finetune_label_path      = f'data/label_{problem}_finetune.npy'
+        #　データの統計情報 
+        print(f'{data_name_list[i]} | Timesereis: shape-{timeseries_list[i].shape} Label: shape{label_list[i].shape}, dist-{np.bincount(label_list[i])}')
     
-    np.save(train_timeseries_path, train_timeseries)
-    np.save(val_timeseries_path, val_timeseries)
-    np.save(test_timeseries_path, test_timeseries)
-    np.save(train_label_path, train_label)
-    np.save(val_label_path, val_label)
-    np.save(test_label_path, test_label)
-    np.save(finetune_label_path, finetune_label)
-    np.save(finetune_timeseries_path, finetune_timeseries)
+        # データの保存
+        np.save(f'data/timeseries_{data_name_list[i]}.npy', timeseries_list[i])
+        np.save(f'data/label_{problem}_{data_name_list[i]}.npy', label_list[i])
+
     
 if __name__ == '__main__':
     main()

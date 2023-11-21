@@ -69,12 +69,11 @@ def train_wrapper(params, gen_dir, train_dataloader, val_dataloader, model, crit
         # Validation
         val_loss, val_acc, _, high_confidence_acc = test(params, model, val_dataloader, criterion, gen_dir)
         print(f'-- Epoch {epoch} | Train Loss {train_loss} | Train Acc {train_acc:.3f}')
-        print(f'           | Val Loss {val_loss} | Val Acc {val_acc:.3f}')
+        print(f'           | Val Loss   {val_loss} | Val Acc   {val_acc:.3f}')
         print("            | High Confidence Accuracy: ", high_confidence_acc)
 
         # 学習率の更新
-        if epoch > 30:
-            scheduler.step(val_loss)
+        scheduler.step()
 
         # モデルの保存
         if  val_acc >= max(val_acc_list, default=0):
